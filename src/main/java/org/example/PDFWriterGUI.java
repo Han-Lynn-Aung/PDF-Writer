@@ -1,6 +1,5 @@
 package org.example;
 
-import org.apache.pdfbox.contentstream.PDContentStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -21,7 +20,7 @@ import java.util.List;
 public class PDFWriterGUI extends JFrame {
 
     private final TextField databaseField;
-    private final JTextField usernameFiled;
+    private final JTextField usernameField;
     private final JPasswordField passwordField;
     private final JTextArea sqlQueryArea;
     private final JTable dataTable;
@@ -30,11 +29,14 @@ public class PDFWriterGUI extends JFrame {
     private PDDocument document;
     private final JButton executeButton = new JButton("Execute Query");
     private final JButton saveButton = new JButton("Save to PDF");
+    private final JButton editHeadersButton = new JButton("Edit Headers");
+    private JTextField[] headerFields;
+    private GridBagConstraints gbc;
 
     public PDFWriterGUI(){
         setTitle("Database to PDF Converter");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new GridLayout());
+        setLayout(new GridBagLayout());
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -44,7 +46,7 @@ public class PDFWriterGUI extends JFrame {
         JPanel connectionPanel = new JPanel(new GridBagLayout());
         connectionPanel.setBorder(BorderFactory.createTitledBorder("Database Connection"));
         databaseField = new TextField("jdbc:mysql://localhost:3306/");
-        usernameFiled = new JTextField();
+        usernameField = new JTextField();
         passwordField = new JPasswordField();
         gbc.gridy = 0;
         connectionPanel.add(new JLabel("Database URL: "), gbc);
@@ -53,7 +55,7 @@ public class PDFWriterGUI extends JFrame {
         gbc.gridy = 2;
         connectionPanel.add(new JLabel("Username: "), gbc);
         gbc.gridy = 3;
-        connectionPanel.add(usernameFiled, gbc);
+        connectionPanel.add(usernameField, gbc);
         gbc.gridy = 4;
         connectionPanel.add(new JLabel("Password"), gbc);
         gbc.gridy = 5;
@@ -129,9 +131,10 @@ public class PDFWriterGUI extends JFrame {
         pack();
         setLocationRelativeTo(null);
     }
+
     private List<List<Object>> fetchDataFromDatabase() throws Exception {
         String databaseUrl = databaseField.getText();
-        String username = usernameFiled.getText();
+        String username = usernameField.getText();
         String password = new String(passwordField.getPassword());
         String sqlQuery = sqlQueryArea.getText();
 
@@ -189,6 +192,7 @@ public class PDFWriterGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, "No Data to save!", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
+
             JFileChooser fileChooser = new JFileChooser();
             fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
             int result = fileChooser.showSaveDialog(this);
@@ -226,9 +230,6 @@ public class PDFWriterGUI extends JFrame {
                         pageContentStream = new PDPageContentStream(document, page);
                     }
 
-                  /*  // Write column headers to Pdf
-                    writeHeaders(pageContentStream, yPosition, margin, tableWidth, rowHeight);*/
-
                     // Write data rows to Pdf
                     writeData(pageContentStream, yPosition, margin, tableWidth, rowHeight, rowPerPage, pageCounter, tableData);
                 }
@@ -246,23 +247,65 @@ public class PDFWriterGUI extends JFrame {
         }
     }
 
-
-
     private void writeData(PDPageContentStream contentStream, float yPosition, float margin, float tableWidth, float rowHeight, int rowsPerPage, int pageCounter, Object[][] tableData) throws IOException {
-        int startRow = pageCounter * rowsPerPage;
+        int startRow = (pageCounter * rowsPerPage) - 1; // Corrected calculation
         int endRow = Math.min((pageCounter + 1) * rowsPerPage, tableData.length);
 
         float yStart = yPosition;
         float tableYStart = yStart - 3 * rowHeight;
 
-        for (int rowIndex = startRow; rowIndex < endRow; rowIndex++) {
+        // Increase the width of the second column (column 2)
+        int secondColumnIndex = 1;
+        float increasedWidth = 50f; // Set the desired width for the second column
+
+        // Set the underline color to black
+        contentStream.setStrokingColor(Color.BLACK);
+
+
+        for (int colIndex = 0; colIndex < columnHeaders.length; colIndex++) {
+            String headerValue = String.valueOf(columnHeaders[colIndex]);
+            float colWidth = tableWidth / (float) columnHeaders.length;
+
+            // Draw the cell background
+            contentStream.addRect(margin + colWidth * colIndex, tableYStart, colWidth, rowHeight);
+            contentStream.setNonStrokingColor(Color.WHITE);
+            contentStream.fill();
+
+            // Set the font and text color for the header
+            contentStream.setFont(PDType1Font.HELVETICA_BOLD, 10);
+            contentStream.setNonStrokingColor(Color.BLACK);
+
+            // Move to the next line and set the position to start writing text
+            contentStream.beginText();
+            contentStream.newLineAtOffset(margin + colWidth * colIndex + 2, tableYStart + rowHeight / 2 - 5); // Center the text vertically
+            contentStream.showText(headerValue);
+            contentStream.endText();
+        }
+
+        // Draw lines at the bottom of the header row
+        contentStream.setLineWidth(1f);
+        contentStream.moveTo(margin, tableYStart);
+        contentStream.lineTo(margin + tableWidth, tableYStart);
+        contentStream.stroke();
+
+        // Move to the next row
+        tableYStart -= rowHeight;
+
+        // Write data rows
+        for (int rowIndex = startRow + 1; rowIndex < endRow; rowIndex++) {
             Object[] rowData = tableData[rowIndex];
             for (int colIndex = 0; colIndex < rowData.length; colIndex++) {
                 String cellValue = String.valueOf(rowData[colIndex]);
-                float colWidth = tableWidth / (float) tableModel.getColumnCount();
+                float colWidth = tableWidth / (float) columnHeaders.length;
+
+                // Increase the width of the second column (column 2)
+                if (colIndex == secondColumnIndex) {
+                    colWidth = increasedWidth;
+                }
 
                 // Draw the cell background
-                contentStream.setNonStrokingColor(Color.WHITE);
+                contentStream.addRect(margin + colWidth * colIndex, tableYStart, colWidth, rowHeight);
+                contentStream.setNonStrokingColor(Color.LIGHT_GRAY);
                 contentStream.fill();
 
                 // Set the font and text color
@@ -277,13 +320,13 @@ public class PDFWriterGUI extends JFrame {
             }
 
             // Draw lines at the bottom of the row
-            contentStream.setStrokingColor(Color.BLACK);
             contentStream.setLineWidth(1f);
             contentStream.moveTo(margin, tableYStart);
             contentStream.lineTo(margin + tableWidth, tableYStart);
             contentStream.stroke();
 
-            tableYStart -= rowHeight; // Move to the next row
+            // Move to the next row
+            tableYStart -= rowHeight;
         }
 
         // Draw lines at the bottom of the data rows
@@ -293,20 +336,10 @@ public class PDFWriterGUI extends JFrame {
         contentStream.stroke();
     }
 
-    private PDPageContentStream createContentStream(PDDocument document) throws IOException {
-        return new PDPageContentStream(document,new PDPage());
-    }
-
-    private PDPageContentStream createPage(PDDocument document, PDPage page)throws IOException {
-      PDPageContentStream pageContentStream = new PDPageContentStream(document,page);
-      pageContentStream.setFont(PDType1Font.HELVETICA,8);
-      return pageContentStream;
-    }
-
     private void displayDataInTable(List<List<Object>> data) {
         if (data.isEmpty() || data.get(0).isEmpty()) {
             // If there's no data or no column headers, show an empty table
-            tableModel.setData(new Object[0][0], new String[0]);
+            tableModel.setData(new Object[0][0], new Object[0]);
         } else {
             // Convert the List<List<Object>> to a 2D array
             Object[][] tableData = new Object[data.size() - 1][];
@@ -330,8 +363,18 @@ public class PDFWriterGUI extends JFrame {
 
             // Update the table model with the new data and modified column headers
             tableModel.setData(tableData, modifiedHeaders.toArray());
+            createHeaderEditFields(modifiedHeaders);
         }
     }
+
+    private void createHeaderEditFields(List<Object> headers) {
+        headerFields = new JTextField[headers.size()];
+        for (int i = 0; i < headers.size(); i++) {
+            headerFields[i] = new JTextField(headers.get(i).toString(), 10);
+        }
+        editHeadersButton.setEnabled(true);
+    }
+
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             PDFWriterGUI pdfWriterGUI = new PDFWriterGUI();
@@ -339,18 +382,25 @@ public class PDFWriterGUI extends JFrame {
         });
     }
 
+    static class HeaderRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            component.setBackground(Color.LIGHT_GRAY);
+            component.setForeground(Color.BLACK);
+            return component;
+        }
+    }
 }
+
 class EditableTableModel extends AbstractTableModel {
 
     private Object[][] data = new Object[0][0];
-    private String[] columnHeaders = new String[0];
+    private Object[] columnHeaders = new Object[0];
 
     public void setData(Object[][] data, Object[] columnHeaders) {
         this.data = data;
-        this.columnHeaders = new String[columnHeaders.length];
-        for (int i = 0; i < columnHeaders.length; i++) {
-            this.columnHeaders[i] = String.valueOf(columnHeaders[i]);
-        }
+        this.columnHeaders = columnHeaders;
         fireTableStructureChanged(); // Use fireTableStructureChanged() instead of fireTableDataChanged()
     }
 
@@ -377,7 +427,7 @@ class EditableTableModel extends AbstractTableModel {
 
     @Override
     public String getColumnName(int columnIndex) {
-        return columnHeaders[columnIndex];
+        return String.valueOf(columnHeaders[columnIndex]);
     }
 
     @Override
@@ -386,12 +436,3 @@ class EditableTableModel extends AbstractTableModel {
     }
 }
 
-class HeaderRenderer extends DefaultTableCellRenderer {
-    @Override
-    public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-        Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-        component.setBackground(Color.LIGHT_GRAY);
-        component.setForeground(Color.BLACK);
-        return component;
-    }
-}
